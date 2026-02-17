@@ -3,7 +3,7 @@ import { OddsSnapshot } from '@prisma/client';
 import { prisma } from '@/lib/db/prisma';
 import { calculateExpectedValuePercent } from '@/lib/math/expectedValue';
 import { fetchNormalizedOdds } from '@/lib/odds/fetchOdds';
-import { blendTrueOdds, TrueOddsOffer } from '@/lib/trueOdds/blendTrueOdds';
+import { blendTwoWayTrueOdds, TwoWayBookOffer } from '@/lib/trueOdds/blendTrueOdds';
 import { normalizeWeightedBookKey } from '@/lib/trueOdds/weights';
 
 type SnapshotRow = OddsSnapshot & {
@@ -74,7 +74,9 @@ function buildFairPriceIndex(groupedByMarketBook: Map<string, SnapshotRow[]>): M
   const fairByMarketSelection = new Map<string, SelectionFairPrice>();
 
   for (const [marketId, marketBookRows] of byMarket.entries()) {
-    const offersBySelection = new Map<string, TrueOddsOffer[]>();
+    const twoWayOffers: TwoWayBookOffer[] = [];
+    let firstSelectionName: string | null = null;
+    let secondSelectionName: string | null = null;
 
     for (const bookRows of marketBookRows) {
       const canonicalBook = normalizeWeightedBookKey(bookRows[0].book.key, bookRows[0].book.name);
@@ -84,37 +86,38 @@ function buildFairPriceIndex(groupedByMarketBook: Map<string, SnapshotRow[]>): M
 
       const first = bookRows[0];
       const second = bookRows[1];
+      firstSelectionName = firstSelectionName ?? first.selectionName;
+      secondSelectionName = secondSelectionName ?? second.selectionName;
 
-      const firstOffers = offersBySelection.get(first.selectionName) ?? [];
-      firstOffers.push({
+      twoWayOffers.push({
         book: canonicalBook,
-        americanOdds: first.oddsAmerican,
-        oppositeAmericanOdds: second.oddsAmerican
+        sideAAmericanOdds: first.oddsAmerican,
+        sideBAmericanOdds: second.oddsAmerican
       });
-      offersBySelection.set(first.selectionName, firstOffers);
-
-      const secondOffers = offersBySelection.get(second.selectionName) ?? [];
-      secondOffers.push({
-        book: canonicalBook,
-        americanOdds: second.oddsAmerican,
-        oppositeAmericanOdds: first.oddsAmerican
-      });
-      offersBySelection.set(second.selectionName, secondOffers);
     }
 
-    for (const [selectionName, offers] of offersBySelection.entries()) {
-      const blended = blendTrueOdds(offers);
-      if (!blended) {
-        continue;
-      }
-
-      fairByMarketSelection.set(`${marketId}::${selectionName}`, {
-        marketId,
-        selectionName,
-        fairProbability: blended.fairProbability,
-        fairAmericanOdds: blended.fairAmericanOdds
-      });
+    if (!firstSelectionName || !secondSelectionName) {
+      continue;
     }
+
+    const blended = blendTwoWayTrueOdds(twoWayOffers);
+    if (!blended) {
+      continue;
+    }
+
+    fairByMarketSelection.set(`${marketId}::${firstSelectionName}`, {
+      marketId,
+      selectionName: firstSelectionName,
+      fairProbability: blended.sideAFairProbability,
+      fairAmericanOdds: blended.sideAFairAmericanOdds
+    });
+
+    fairByMarketSelection.set(`${marketId}::${secondSelectionName}`, {
+      marketId,
+      selectionName: secondSelectionName,
+      fairProbability: blended.sideBFairProbability,
+      fairAmericanOdds: blended.sideBFairAmericanOdds
+    });
   }
 
   return fairByMarketSelection;

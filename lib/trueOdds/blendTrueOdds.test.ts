@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { blendTrueOdds } from '@/lib/trueOdds/blendTrueOdds';
+import { blendTrueOdds, blendTwoWayTrueOdds } from '@/lib/trueOdds/blendTrueOdds';
 
 describe('blendTrueOdds', () => {
   it('blends fair probability when all weighted books are present', () => {
@@ -47,5 +47,20 @@ describe('blendTrueOdds', () => {
     expect(sideA).not.toBeNull();
     expect(sideB).not.toBeNull();
     expect((sideA?.fairProbability ?? 0) + (sideB?.fairProbability ?? 0)).toBeCloseTo(1, 5);
+  });
+});
+
+describe('blendTwoWayTrueOdds', () => {
+  it('returns fair probabilities that sum exactly to one after normalization', () => {
+    const result = blendTwoWayTrueOdds([
+      { book: 'pinnacle', sideAAmericanOdds: -110, sideBAmericanOdds: -110 },
+      { book: 'circa', sideAAmericanOdds: -105, sideBAmericanOdds: -115 },
+      { book: 'betcris', sideAAmericanOdds: -108, sideBAmericanOdds: -112 }
+    ]);
+
+    expect(result).not.toBeNull();
+    expect((result?.sideAFairProbability ?? 0) + (result?.sideBFairProbability ?? 0)).toBeCloseTo(1, 10);
+    expect(result?.sideAFairAmericanOdds).toBe(102);
+    expect(result?.sideBFairAmericanOdds).toBe(-102);
   });
 });

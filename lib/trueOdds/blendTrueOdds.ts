@@ -11,9 +11,23 @@ export type TrueOddsOffer = {
   oppositeAmericanOdds?: number;
 };
 
+export type TwoWayBookOffer = {
+  book: CanonicalWeightedBook;
+  sideAAmericanOdds: number;
+  sideBAmericanOdds: number;
+};
+
 export type BlendedTrueOddsResult = {
   fairProbability: number;
   fairAmericanOdds: number;
+  contributingBooks: CanonicalWeightedBook[];
+};
+
+export type BlendedTwoWayTrueOddsResult = {
+  sideAFairProbability: number;
+  sideBFairProbability: number;
+  sideAFairAmericanOdds: number;
+  sideBFairAmericanOdds: number;
   contributingBooks: CanonicalWeightedBook[];
 };
 
@@ -29,18 +43,24 @@ function toDeviggedSelectionProbability(offer: TrueOddsOffer): number {
   return removeVigTwoWay(selectionProbability, oppositeProbability).fairA;
 }
 
-export function blendTrueOdds(offers: TrueOddsOffer[]): BlendedTrueOddsResult | null {
-  if (offers.length === 0) {
-    return null;
-  }
-
+function uniqueOffersByBook(offers: TrueOddsOffer[]): Map<CanonicalWeightedBook, TrueOddsOffer> {
   const uniqueByBook = new Map<CanonicalWeightedBook, TrueOddsOffer>();
+
   for (const offer of offers) {
     if (!uniqueByBook.has(offer.book)) {
       uniqueByBook.set(offer.book, offer);
     }
   }
 
+  return uniqueByBook;
+}
+
+export function blendTrueOdds(offers: TrueOddsOffer[]): BlendedTrueOddsResult | null {
+  if (offers.length === 0) {
+    return null;
+  }
+
+  const uniqueByBook = uniqueOffersByBook(offers);
   let weightedProbabilityTotal = 0;
   let totalWeight = 0;
   const contributingBooks: CanonicalWeightedBook[] = [];
@@ -64,5 +84,42 @@ export function blendTrueOdds(offers: TrueOddsOffer[]): BlendedTrueOddsResult | 
     fairProbability,
     fairAmericanOdds: impliedProbabilityToAmericanOdds(fairProbability),
     contributingBooks
+  };
+}
+
+export function blendTwoWayTrueOdds(offers: TwoWayBookOffer[]): BlendedTwoWayTrueOddsResult | null {
+  if (offers.length === 0) {
+    return null;
+  }
+
+  const sideAOffers: TrueOddsOffer[] = offers.map((offer) => ({
+    book: offer.book,
+    americanOdds: offer.sideAAmericanOdds,
+    oppositeAmericanOdds: offer.sideBAmericanOdds
+  }));
+
+  const sideBOffers: TrueOddsOffer[] = offers.map((offer) => ({
+    book: offer.book,
+    americanOdds: offer.sideBAmericanOdds,
+    oppositeAmericanOdds: offer.sideAAmericanOdds
+  }));
+
+  const sideA = blendTrueOdds(sideAOffers);
+  const sideB = blendTrueOdds(sideBOffers);
+
+  if (!sideA || !sideB) {
+    return null;
+  }
+
+  const total = sideA.fairProbability + sideB.fairProbability;
+  const sideAFairProbability = sideA.fairProbability / total;
+  const sideBFairProbability = sideB.fairProbability / total;
+
+  return {
+    sideAFairProbability,
+    sideBFairProbability,
+    sideAFairAmericanOdds: impliedProbabilityToAmericanOdds(sideAFairProbability),
+    sideBFairAmericanOdds: impliedProbabilityToAmericanOdds(sideBFairProbability),
+    contributingBooks: [...new Set([...sideA.contributingBooks, ...sideB.contributingBooks])]
   };
 }
